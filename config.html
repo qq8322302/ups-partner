@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f4f9;
+        }
+        .container {
+            width: 400px;
+            padding: 20px;
+            border-radius: 10px;
+            background-color: white;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            position: relative;
+            top: -5px;
+            bottom: -5px;
+        }
+        h1 {
+            text-align: center;
+            color: white;
+            background-color: #4CAF50;
+            padding: 10px;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+            margin: 0;
+        }
+        .info-row {
+            margin: 10px 0;
+            font-size: 16px;
+            margin-left: 10px;
+        }
+        input[type="number"] {
+            width: 60px;
+            margin-left: 10px;
+			text-align: center;
+        }
+        button {
+            padding: 10px 16px;
+            margin: 5px;
+            cursor: pointer;
+			border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .disabled {
+            background-color: gray;
+            color: black;
+            cursor: not-allowed;
+        }
+        .enabled {
+            background-color: #4CAF50;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>UPS-Partner</h1>
+        <div class="info-row">
+            连接状态: <span id="connection-status">未连接</span>
+        </div>
+        <div class="info-row">
+            固件版本号: <span id="firmware-version">v1.0</span>
+        </div>
+        <div class="info-row">
+            设备最低电量: <input type="number" id="min-battery" min="0" max="99" value="5">%
+        </div>
+        <div class="info-row">
+            设备最高电量: <input type="number" id="max-battery" min="1" max="100" value="100">%
+        </div>
+        <div class="info-row">
+            设备掉电1%的时间: <input type="number" id="discharge-time" min="1" max="100" value="3">秒
+        </div>
+        <div class="info-row">
+            设备充电1%的时间: <input type="number" id="charge-time" min="1" max="100" value="10">秒
+        </div>
+        <button id="connect-btn" class="enabled" onclick="handleConnect()">连接设备</button>
+        <button id="disconnect-btn" class="disabled" disabled onclick="handleDisconnect()">断开设备</button>
+        <button id="upgrade-btn" class="disabled" disabled onclick="handleUpgrade()">升级模式</button>
+        <button id="save-btn" class="disabled" disabled onclick="handleSave()">保存配置</button>
+		<div style="font-size: 12px;color: #555555;margin-left: 10px;">
+			<span>提示： (最高电量 - 最低电量) x 掉电1%的时间 = 总时间</br></span>
+			<span>例如：最高电量100%，最低电量20%，掉电1%的时间5秒。</br></span>
+			<span>断电后，经过(100-20)*5 = 400秒后，会从100%降低到20%</span>
+		</div>
+    </div>
+    <script>
+		var device;
+		let isConnected = false;
+		let report = new Uint8Array(8);
+		let save = false;
+		async function handleInputReport(event) {
+			var data = new Uint8Array(event.data.buffer);
+			if(data[4] == 0x0C){
+				if(save == true){
+					var USER_RE_L = parseInt( document.getElementById('min-battery').value		, 10);
+					var USER_RE_H = parseInt( document.getElementById('max-battery').value		, 10);
+					var USER_SS_L = parseInt( document.getElementById('discharge-time').value	, 10);
+					var USER_SS_H = parseInt( document.getElementById('charge-time').value		, 10);
+					
+					if( USER_RE_L == data[0] &&
+						USER_RE_H == data[1] &&
+						USER_SS_L == data[2] &&
+						USER_SS_H == data[3] )
+					{
+						alert("保存成功.");
+					}else{
+						alert("保存失败！！！");
+					}
+				}else{
+					document.getElementById('min-battery').value = data[0];
+					document.getElementById('max-battery').value = data[1];
+					document.getElementById('discharge-time').value = data[2];
+					document.getElementById('charge-time').value = data[3];
+				}
+			}
+		}
+		
+        async function handleConnect() {
+			if (!isConnected) {
+				if (!device || !device.opened){
+					try {
+						var devices = await navigator.hid.requestDevice({
+							filters: [{ vendorId: 0x0463, productId: 0xFFFF, usagePage: 0x0C, usage: 0x01 }]
+						});
+						device = devices[0];
+						device.open().then(async () => {
+							isConnected = true;
+							
+							device.addEventListener('inputreport', handleInputReport);
+							
+							 // Simulate HID connection success
+							document.getElementById('connect-btn').classList.remove('enabled');
+							document.getElementById('connect-btn').classList.add('disabled');
+							document.getElementById('connect-btn').disabled = true;
+
+							document.getElementById('disconnect-btn').classList.remove('disabled');
+							document.getElementById('disconnect-btn').classList.add('enabled');
+							document.getElementById('disconnect-btn').disabled = false;
+
+							document.getElementById('upgrade-btn').classList.remove('disabled');
+							document.getElementById('upgrade-btn').classList.add('enabled');
+							document.getElementById('upgrade-btn').disabled = false;
+
+							document.getElementById('save-btn').classList.remove('disabled');
+							document.getElementById('save-btn').classList.add('enabled');
+							document.getElementById('save-btn').disabled = false;
+							
+							document.getElementById('connection-status').textContent = '已连接';
+							
+							report[0] = 0x00;
+							report[1] = 0x00;
+							report[2] = 0x00;
+							report[3] = 0x00;
+							report[4] = 0x00;
+							report[5] = 0x00;
+							report[6] = 0x00;
+							report[7] = 0x00;
+							await device.sendReport(193, report);
+						});
+					}catch (error) {
+						console.log(error.message);
+					}
+				}
+            }
+           
+        }
+
+        function handleDisconnect() {
+			if (isConnected) {
+				if (device && device.opened){
+					device.close();
+					device = null;
+				}
+                isConnected = false;
+				// Simulate disconnecting device
+				document.getElementById('connect-btn').classList.remove('disabled');
+				document.getElementById('connect-btn').classList.add('enabled');
+				document.getElementById('connect-btn').disabled = false;
+
+				document.getElementById('disconnect-btn').classList.remove('enabled');
+				document.getElementById('disconnect-btn').classList.add('disabled');
+				document.getElementById('disconnect-btn').disabled = true;
+
+				document.getElementById('upgrade-btn').classList.remove('enabled');
+				document.getElementById('upgrade-btn').classList.add('disabled');
+				document.getElementById('upgrade-btn').disabled = true;
+
+				document.getElementById('save-btn').classList.remove('enabled');
+				document.getElementById('save-btn').classList.add('disabled');
+				document.getElementById('save-btn').disabled = true;
+
+				document.getElementById('connection-status').textContent = '未连接';
+			}
+        }
+
+        async function handleUpgrade() {
+			if (!isConnected) {
+				alert("请先连接设备！");
+				return;
+			}
+			report[0] = 1;
+			report[1] = 100;
+			report[2] = 3;
+			report[3] = 10;
+			report[4] = 0x0C;
+			report[5] = 0xAA;
+			report[6] = 0x00;
+			report[7] = 0x00;
+			await device.sendReport(193, report);
+            alert('已进入升级模式，请使用专用升级器软件升级！！！');
+			handleDisconnect();
+        }
+		
+		async function handleSave() {
+			if (!isConnected) {
+				alert("请先连接设备！");
+				return;
+			}
+			var USER_RE_L = parseInt( document.getElementById('min-battery').value		, 10);
+			var USER_RE_H = parseInt( document.getElementById('max-battery').value		, 10);
+			var USER_SS_L = parseInt( document.getElementById('discharge-time').value	, 10);
+			var USER_SS_H = parseInt( document.getElementById('charge-time').value		, 10);
+			// console.log(USER_RE_L,USER_RE_H,USER_SS_L,USER_SS_H);
+			if(USER_RE_L >=0 && USER_RE_L < 100){
+				if(USER_RE_H >0 && USER_RE_H <= 100){
+					if(USER_RE_L < USER_RE_H){
+						if(USER_SS_L>=0 && USER_RE_H <= 100){
+							if(USER_SS_H>=0 && USER_SS_H <= 100){
+								save = true;
+								report[0] = USER_RE_L;
+								report[1] = USER_RE_H;
+								report[2] = USER_SS_L;
+								report[3] = USER_SS_H;
+								report[4] = 0x0C;
+								report[5] = 0x00;
+								report[6] = 0x00;
+								report[7] = 0x00;
+								await device.sendReport(193, report);
+								
+							}else{
+								alert("充电速度范围在1~100，请修改！");
+							}
+						}else{
+							alert("掉电速度范围在1~100，请修改！");
+						}
+					}else{
+						alert("最低电量应小于最高电量！");
+					}
+				}else{
+					alert("最高电量范围在1~100，请修改！");
+				}
+			}else{
+				alert("最低电量范围在0~99，请修改！");
+			}
+		}
+    </script>
+</body>
+</html>
+
+
+
